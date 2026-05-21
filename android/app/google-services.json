@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "10903919130",
+    "project_id": "gotcha-d6acc",
+    "storage_bucket": "gotcha-d6acc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:10903919130:android:773ce68c7c33006df68fa3",
+        "android_client_info": {
+          "package_name": "com.example.gotcha_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAsBRUpTVJaU22_NcGyYK3TdCdnWEko_Uk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

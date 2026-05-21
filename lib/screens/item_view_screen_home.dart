@@ -1,13 +1,41 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/header_nav.dart';
 
 class ItemViewScreenHome extends StatelessWidget {
-  final bool isLost;
+  // Pass the full Firestore document snapshot
+  final QueryDocumentSnapshot<Map<String, dynamic>> report;
 
   const ItemViewScreenHome({
     super.key,
-    required this.isLost,
+    required this.report,
   });
+
+  // ─── HELPERS ──────────────────────────────────────────────────────
+  bool get isLost => (report['type'] ?? 'lost') == 'lost';
+
+  String get itemName =>
+      (report['itemName'] ?? 'Unknown Item').toString().toUpperCase();
+
+  String get description =>
+      report['description'] ?? 'No description provided.';
+
+  String get location => report['location'] ?? 'Location not specified.';
+
+  String get contact => report['contact'] ?? 'No contact provided.';
+
+  String get imageUrl => report['imageUrl'] ?? '';
+
+  String get formattedDate {
+    final ts = report['date'];
+    if (ts == null) return 'Date not specified';
+    final dt = (ts as Timestamp).toDate();
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return '${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,20 +49,17 @@ class ItemViewScreenHome extends StatelessWidget {
             children: [
               const SizedBox(height: 20),
 
-              // 🔹 HEADER (REUSED)
+              // HEADER
               const HeaderNav(),
 
               const SizedBox(height: 10),
 
-// 🔙 BACK BUTTON (WIRE FRAME STYLE)
+              // BACK BUTTON
               GestureDetector(
                 onTap: () => Navigator.pop(context),
-                child: Row(
-                  children: const [
-                    Icon(
-                      Icons.arrow_back,
-                      size: 18,
-                    ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.arrow_back, size: 18),
                     SizedBox(width: 6),
                     Text(
                       'Back',
@@ -49,70 +74,109 @@ class ItemViewScreenHome extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // 🖼 ITEM IMAGE
+              // ITEM IMAGE
               Center(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(18),
-                  child: Image.asset(
-                    'images/wallet.jpg',
+                  child: imageUrl.isNotEmpty
+                      ? Image.network(
+                    imageUrl,
                     width: 220,
                     height: 150,
                     fit: BoxFit.cover,
-                  ),
+                    loadingBuilder: (_, child, progress) {
+                      if (progress == null) return child;
+                      return Container(
+                        width: 220,
+                        height: 150,
+                        color: Colors.white38,
+                        child: const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => _imagePlaceholder(),
+                  )
+                      : _imagePlaceholder(),
                 ),
               ),
 
               const SizedBox(height: 20),
 
-              // 🏷 ITEM TITLE
-              const Text(
-                'BROWN WALLET',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1,
-                ),
+              // ITEM TITLE + TYPE BADGE
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      itemName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isLost
+                          ? Colors.redAccent.withOpacity(0.15)
+                          : Colors.green.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isLost ? 'LOST' : 'FOUND',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: isLost ? Colors.redAccent : Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 16),
 
-              // 📝 DESCRIPTION
+              // DESCRIPTION
               _infoRow(
                 icon: Icons.chat_bubble_outline,
                 title: 'Description',
-                value: 'I lost my wallet. Last seen at SPCB Room 202.',
+                value: description,
               ),
 
               const SizedBox(height: 12),
 
-              // 📍 LAST SEEN LOCATION
+              // LOCATION
               _infoRow(
                 icon: Icons.location_on_outlined,
-                title: 'Last seen location',
-                value: 'SPCB Room 202',
+                title: isLost ? 'Last seen location' : 'Found at',
+                value: location,
               ),
 
               const SizedBox(height: 12),
 
-              // 📅 DATE LOST / FOUND
+              // DATE
               _infoRow(
                 icon: Icons.calendar_month_outlined,
                 title: isLost ? 'Date lost' : 'Date found',
-                value: 'May 01, 2026',
+                value: formattedDate,
               ),
 
               const SizedBox(height: 12),
 
-              // 📞 CONTACT
+              // CONTACT
               _infoRow(
                 icon: Icons.call_outlined,
                 title: 'Contact',
-                value: '0912 345 6789',
+                value: contact,
               ),
 
               const SizedBox(height: 22),
 
-              // ℹ INFO NOTICE
+              // INFO NOTICE
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -120,8 +184,8 @@ class ItemViewScreenHome extends StatelessWidget {
                   color: const Color(0xFFBFD9F6),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Row(
-                  children: const [
+                child: const Row(
+                  children: [
                     Icon(Icons.info_outline, size: 22),
                     SizedBox(width: 10),
                     Expanded(
@@ -145,7 +209,21 @@ class ItemViewScreenHome extends StatelessWidget {
     );
   }
 
-  // 🔹 REUSABLE INFO ROW
+  // ─── IMAGE PLACEHOLDER ─────────────────────────────────────────────
+  Widget _imagePlaceholder() {
+    return Container(
+      width: 220,
+      height: 150,
+      decoration: BoxDecoration(
+        color: Colors.white38,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: const Icon(Icons.image_not_supported_outlined,
+          size: 40, color: Colors.black26),
+    );
+  }
+
+  // ─── REUSABLE INFO ROW ─────────────────────────────────────────────
   Widget _infoRow({
     required IconData icon,
     required String title,

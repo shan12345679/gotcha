@@ -1,9 +1,121 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:gotcha_app/screens/signup_screen.dart';
 import 'package:gotcha_app/screens/home_screen.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  late TextEditingController _emailController;
+  late TextEditingController _passwordController;
+
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController();
+    _passwordController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    // Validate inputs
+    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please fill in all fields';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Sign in with Firebase Auth
+      final UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      // Get user UID
+      final String uid = userCredential.user!.uid;
+
+      // Save/Update user data in Firestore
+      await _firestore.collection('users').doc(uid).update({
+        'lastLogin': FieldValue.serverTimestamp(),
+        'isLoggedIn': true,
+      }).catchError((_) {
+        // If document doesn't exist, create it
+        return _firestore.collection('users').doc(uid).set({
+          'email': _emailController.text.trim(),
+          'uid': uid,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastLogin': FieldValue.serverTimestamp(),
+          'isLoggedIn': true,
+        });
+      });
+
+      // Navigate to HomeScreen on success
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 400),
+            pageBuilder: (_, animation, __) => const HomeScreen(),
+            transitionsBuilder: (_, animation, __, child) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _errorMessage = _getErrorMessage(e.code);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An unexpected error occurred';
+        _isLoading = false;
+      });
+    }
+  }
+
+  String _getErrorMessage(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'No account found with this email';
+      case 'wrong-password':
+        return 'Incorrect password';
+      case 'invalid-email':
+        return 'Invalid email address';
+      case 'user-disabled':
+        return 'This account has been disabled';
+      default:
+        return 'Login failed. Please try again';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,46 +163,69 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 28),
 
-                    const _GotchaTextField(hint: 'Username'),
+                    // Error Message
+                    if (_errorMessage != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          border: Border.all(color: Colors.red.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+
+                    // Email TextField
+                    _GotchaTextField(
+                      controller: _emailController,
+                      hint: 'Email',
+                      keyboardType: TextInputType.emailAddress,
+                    ),
                     const SizedBox(height: 12),
 
-                    const _GotchaTextField(
+                    // Password TextField
+                    _GotchaTextField(
+                      controller: _passwordController,
                       hint: 'Password',
                       obscure: true,
                     ),
 
                     const SizedBox(height: 20),
 
+                    // Login Button
                     SizedBox(
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.of(context).pushReplacement(
-                            PageRouteBuilder(
-                              transitionDuration:
-                              const Duration(milliseconds: 400),
-                              pageBuilder: (_, animation, __) =>
-                              const HomeScreen(),
-                              transitionsBuilder:
-                                  (_, animation, __, child) {
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: child,
-                                );
-                              },
-                            ),
-                          );
-                        },
+                        onPressed: _isLoading ? null : _login,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1A1A2E),
                           foregroundColor: Colors.white,
+                          disabledBackgroundColor: const Color(0xFF888888),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                           elevation: 0,
                         ),
-                        child: const Text(
+                        child: _isLoading
+                            ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                            strokeWidth: 2,
+                          ),
+                        )
+                            : const Text(
                           'Login',
                           style: TextStyle(
                             fontSize: 16,
@@ -103,6 +238,7 @@ class LoginScreen extends StatelessWidget {
 
                     const SizedBox(height: 20),
 
+                    // Sign Up Link
                     Center(
                       child: GestureDetector(
                         onTap: () {
@@ -138,7 +274,7 @@ class LoginScreen extends StatelessWidget {
                             children: [
                               TextSpan(text: "Don't have an account? "),
                               TextSpan(
-                                text: 'Sign in',
+                                text: 'Sign up',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF1A1A2E),
@@ -172,11 +308,13 @@ class LoginScreen extends StatelessWidget {
 }
 
 class _GotchaTextField extends StatefulWidget {
+  final TextEditingController? controller;
   final String hint;
   final bool obscure;
   final TextInputType? keyboardType;
 
   const _GotchaTextField({
+    this.controller,
     required this.hint,
     this.obscure = false,
     this.keyboardType,
@@ -198,6 +336,7 @@ class _GotchaTextFieldState extends State<_GotchaTextField> {
   @override
   Widget build(BuildContext context) {
     return TextField(
+      controller: widget.controller,
       obscureText: _obscureText,
       keyboardType: widget.keyboardType,
       style: const TextStyle(

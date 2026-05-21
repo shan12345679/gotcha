@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:gotcha_app/screens/home_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -8,6 +11,10 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
+  // ─── Firebase Instances ────────────────────────────────────────────────────
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   // ─── Controllers ────────────────────────────────────────────────────────────
   final TextEditingController _firstNameCtrl = TextEditingController();
   final TextEditingController _lastNameCtrl = TextEditingController();
@@ -19,13 +26,28 @@ class _SignupScreenState extends State<SignupScreen> {
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
+    _usernameCtrl.dispose();
+    _emailCtrl.dispose();
+    _contactCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    super.dispose();
+  }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
   bool _isValidEmail(String email) {
     return email.contains('@') && email.contains('.');
   }
 
-  void _onSignup() {
+  Future<void> _onSignup() async {
+    // Validate inputs
     if (_firstNameCtrl.text.isEmpty ||
         _lastNameCtrl.text.isEmpty ||
         _usernameCtrl.text.isEmpty ||
@@ -34,13 +56,127 @@ class _SignupScreenState extends State<SignupScreen> {
         !_isValidEmail(_emailCtrl.text) ||
         _passwordCtrl.text.isEmpty ||
         _passwordCtrl.text != _confirmPasswordCtrl.text) {
+      setState(() {
+        _errorMessage = 'Please check your inputs';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please check your inputs')),
       );
       return;
     }
 
-    // TODO: connect to backend / database
+    // Check if passwords match
+    if (_passwordCtrl.text != _confirmPasswordCtrl.text) {
+      setState(() {
+        _errorMessage = 'Passwords do not match';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match')),
+      );
+      return;
+    }
+
+    // Check password length
+    if (_passwordCtrl.text.length < 6) {
+      setState(() {
+        _errorMessage = 'Password must be at least 6 characters';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password must be at least 6 characters')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Create user in Firebase Auth
+      final UserCredential userCredential =
+      await _auth.createUserWithEmailAndPassword(
+        email: _emailCtrl.text.trim(),
+        password: _passwordCtrl.text,
+      );
+
+      final String uid = userCredential.user!.uid;
+
+      // Save user profile to Firestore
+      await _firestore.collection('users').doc(uid).set({
+        'uid': uid,
+        'firstName': _firstNameCtrl.text.trim(),
+        'lastName': _lastNameCtrl.text.trim(),
+        'fullName':
+        '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}',
+        'username': _usernameCtrl.text.trim(),
+        'email': _emailCtrl.text.trim(),
+        'contact': _contactCtrl.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+        'isLoggedIn': true,
+        'profileImageUrl': '', // Empty for now
+        'bio': '', // Empty for now
+        'location': '', // Empty for now
+      });
+
+      // Navigate to HomeScreen on success
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 400),
+            pageBuilder: (_, animation, __) => const HomeScreen(),
+            transitionsBuilder: (_, animation, __, child) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _errorMessage = _getAuthErrorMessage(e.code);
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorMessage!)),
+      );
+    } on FirebaseException catch (e) {
+      setState(() {
+        _errorMessage = 'Database error: ${e.message}';
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_errorMessage!)),
+      );
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'An unexpected error occurred';
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('An unexpected error occurred')),
+      );
+    }
+  }
+
+  String _getAuthErrorMessage(String code) {
+    switch (code) {
+      case 'weak-password':
+        return 'Password is too weak';
+      case 'email-already-in-use':
+        return 'Email is already registered';
+      case 'invalid-email':
+        return 'Invalid email address';
+      case 'operation-not-allowed':
+        return 'Sign up is currently disabled';
+      case 'user-disabled':
+        return 'This account has been disabled';
+      default:
+        return 'Sign up failed. Please try again';
+    }
   }
 
   @override
@@ -84,6 +220,25 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 28),
 
+                    // Error Message Display
+                    if (_errorMessage != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          border: Border.all(color: Colors.red.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+
                     // ─── First + Last Name ─────────────────────────────────────
                     Row(
                       children: [
@@ -113,8 +268,9 @@ class _SignupScreenState extends State<SignupScreen> {
                         final filtered =
                         value.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '');
 
-                        final trimmed =
-                        filtered.length > 20 ? filtered.substring(0, 20) : filtered;
+                        final trimmed = filtered.length > 20
+                            ? filtered.substring(0, 20)
+                            : filtered;
 
                         if (trimmed != value) {
                           _usernameCtrl.text = trimmed;
@@ -143,8 +299,9 @@ class _SignupScreenState extends State<SignupScreen> {
                       controller: _contactCtrl,
                       onChanged: (value) {
                         final digits = value.replaceAll(RegExp(r'\D'), '');
-                        final trimmed =
-                        digits.length > 11 ? digits.substring(0, 11) : digits;
+                        final trimmed = digits.length > 11
+                            ? digits.substring(0, 11)
+                            : digits;
 
                         if (trimmed != value) {
                           _contactCtrl.text = trimmed;
@@ -205,14 +362,26 @@ class _SignupScreenState extends State<SignupScreen> {
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: _onSignup,
+                        onPressed: _isLoading ? null : _onSignup,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1A1A2E),
+                          disabledBackgroundColor: const Color(0xFF888888),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        child: const Text(
+                        child: _isLoading
+                            ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                            strokeWidth: 2,
+                          ),
+                        )
+                            : const Text(
                           'Sign Up',
                           style: TextStyle(
                             fontSize: 16,
@@ -235,14 +404,14 @@ class _SignupScreenState extends State<SignupScreen> {
                               TextSpan(
                                 text: 'Have an account? ',
                                 style: TextStyle(
-                                  color: Color(0xFF888888), // grey
+                                  color: Color(0xFF888888),
                                   fontWeight: FontWeight.normal,
                                 ),
                               ),
                               TextSpan(
                                 text: 'Log in',
                                 style: TextStyle(
-                                  color: Color(0xFF1A1A2E), // existing dark color
+                                  color: Color(0xFF1A1A2E),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),

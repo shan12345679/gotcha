@@ -1,13 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/header_nav.dart';
 
 class ItemViewScreen extends StatefulWidget {
-  final bool isLost;
+  /// The Firestore document for this report (owned by the current user).
+  final QueryDocumentSnapshot<Map<String, dynamic>> report;
 
-  const ItemViewScreen({
-    super.key,
-    required this.isLost,
-  });
+  const ItemViewScreen({super.key, required this.report});
 
   @override
   State<ItemViewScreen> createState() => _ItemViewScreenState();
@@ -17,12 +17,111 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
   bool isEditing = false;
   bool isResolved = false;
 
-  // SAMPLE DATA (replace later with real data / controllers)
-  String title = 'CELLPHONE';
-  String description = 'I lost my wallet. Last seen at SPCB Room 202.';
-  String location = 'SPCB Room 202';
-  String date = 'May 01, 2026';
-  String contact = '0912 345 6789';
+  // ─── EDITABLE FIELD CONTROLLERS ───────────────────────────────────
+  late TextEditingController _nameCtrl;
+  late TextEditingController _descCtrl;
+  late TextEditingController _locationCtrl;
+  late TextEditingController _contactCtrl;
+
+  // ─── READ-ONLY DERIVED VALUES ─────────────────────────────────────
+  late bool _isLost;
+  late String _imageUrl;
+  late String _dateDisplay;
+
+  @override
+  void initState() {
+    super.initState();
+    final data = widget.report.data();
+
+    _isLost = (data['type'] ?? 'lost') == 'lost';
+    _imageUrl = data['imageUrl'] ?? '';
+    _dateDisplay = _formatDate(data['date']);
+    _isResolved(data['status']);
+
+    _nameCtrl =
+        TextEditingController(text: data['itemName'] ?? '');
+    _descCtrl =
+        TextEditingController(text: data['description'] ?? '');
+    _locationCtrl =
+        TextEditingController(text: data['location'] ?? '');
+    _contactCtrl =
+        TextEditingController(text: data['contact'] ?? '');
+  }
+
+  void _isResolved(dynamic status) {
+    isResolved = status == 'resolved';
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    _locationCtrl.dispose();
+    _contactCtrl.dispose();
+    super.dispose();
+  }
+
+  // ─── FORMAT TIMESTAMP ─────────────────────────────────────────────
+  String _formatDate(dynamic ts) {
+    if (ts == null) return 'No date';
+    final dt = (ts as Timestamp).toDate();
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}';
+  }
+
+  // ─── FIRESTORE SAVE ───────────────────────────────────────────────
+  Future<void> _saveChanges() async {
+    try {
+      await widget.report.reference.update({
+        'itemName': _nameCtrl.text.trim(),
+        'description': _descCtrl.text.trim(),
+        'location': _locationCtrl.text.trim(),
+        'contact': _contactCtrl.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) setState(() => isEditing = false);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to save. Please try again.')),
+        );
+      }
+    }
+  }
+
+  // ─── FIRESTORE DELETE ─────────────────────────────────────────────
+  Future<void> _deleteItem() async {
+    try {
+      await widget.report.reference.delete();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete. Please try again.')),
+        );
+      }
+    }
+  }
+
+  // ─── FIRESTORE MARK AS RESOLVED ───────────────────────────────────
+  Future<void> _markResolved() async {
+    try {
+      await widget.report.reference.update({
+        'status': 'resolved',
+        'resolvedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) setState(() => isResolved = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update. Please try again.')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,37 +130,34 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ===== HEADER NAV WITH PADDING =====
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: const HeaderNav(),
+            // HEADER
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 26),
+              child: HeaderNav(),
             ),
 
             const SizedBox(height: 8),
 
-            // 🔙 BACK BUTTON (WIRE FRAME STYLE)
+            // BACK BUTTON
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 26),
               child: GestureDetector(
                 onTap: () => Navigator.pop(context),
-                child: Row(
-                  children: const [
+                child: const Row(
+                  children: [
                     Icon(Icons.arrow_back, size: 18),
                     SizedBox(width: 6),
                     Text(
                       'Back',
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
+                          fontSize: 12, fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
               ),
             ),
 
-
-            // ===== SCROLLABLE CONTENT =====
+            // SCROLLABLE CONTENT
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 26),
@@ -70,71 +166,57 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
                   children: [
                     const SizedBox(height: 24),
 
-                    // IMAGE
-                    Center(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.asset(
-                          widget.isLost
-                              ? 'images/wallet.jpg'
-                              : 'images/phone.jpg',
-                          width: 220,
-                          height: 220,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
+                    // IMAGE — handles base64 and network URLs
+                    Center(child: _buildImage(_imageUrl)),
 
                     const SizedBox(height: 24),
 
-                    // TITLE
+                    // TITLE (editable)
                     isEditing
-                        ? _editField(title, (v) => title = v)
-                        : Text(
-                      title,
+                        ? _editField(
+                      controller: _nameCtrl,
                       style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
+                          fontSize: 22, fontWeight: FontWeight.w900),
+                    )
+                        : Text(
+                      _nameCtrl.text.toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.w900),
                     ),
 
                     const SizedBox(height: 18),
 
                     _detail(
-                      Icons.chat_bubble_outline,
-                      'Description',
-                      description,
-                      isEditing,
-                          (v) => description = v,
+                      icon: Icons.chat_bubble_outline,
+                      label: 'Description',
+                      controller: _descCtrl,
+                      editable: isEditing,
                     ),
 
                     _detail(
-                      Icons.location_on_outlined,
-                      widget.isLost ? 'Last seen location' : 'Found at',
-                      location,
-                      isEditing,
-                          (v) => location = v,
+                      icon: Icons.location_on_outlined,
+                      label: _isLost ? 'Last seen location' : 'Found at',
+                      controller: _locationCtrl,
+                      editable: isEditing,
+                    ),
+
+                    // Date is never editable
+                    _detailStatic(
+                      icon: Icons.calendar_month_outlined,
+                      label: _isLost ? 'Date lost' : 'Date found',
+                      value: _dateDisplay,
                     ),
 
                     _detail(
-                      Icons.calendar_month_outlined,
-                      widget.isLost ? 'Date lost' : 'Date found',
-                      date,
-                      false,
-                      null,
-                    ),
-
-                    _detail(
-                      Icons.phone_in_talk_outlined,
-                      'Contact',
-                      contact,
-                      isEditing,
-                          (v) => contact = v,
+                      icon: Icons.phone_in_talk_outlined,
+                      label: 'Contact',
+                      controller: _contactCtrl,
+                      editable: isEditing,
                     ),
 
                     const SizedBox(height: 40),
 
-                    // ===== RESOLVED STATUS =====
+                    // RESOLVED BADGE
                     if (isResolved)
                       Center(
                         child: Container(
@@ -145,13 +227,11 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            widget.isLost
+                            _isLost
                                 ? 'Item has been found'
                                 : 'Item has been claimed',
                             style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
+                                fontSize: 13, fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
@@ -162,36 +242,32 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
               ),
             ),
 
-            // ===== FIXED BOTTOM ACTION BAR =====
+            // FIXED BOTTOM ACTION BAR (hidden when resolved)
             if (!isResolved)
               Container(
                 padding: const EdgeInsets.fromLTRB(26, 12, 26, 22),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFD9E7FB),
-                ),
+                color: const Color(0xFFD9E7FB),
                 child: Column(
                   children: [
                     Row(
                       children: [
                         Expanded(
                           child: _actionButton(
-                            isEditing ? 'Save' : 'Edit',
-                            Icons.edit,
-                            const Color(0xFF9EC1F7),
-                                () {
-                              setState(() {
-                                isEditing = !isEditing;
-                              });
-                            },
+                            label: isEditing ? 'Save' : 'Edit',
+                            icon: isEditing ? Icons.check : Icons.edit,
+                            color: const Color(0xFF9EC1F7),
+                            onTap: isEditing ? _saveChanges : () => setState(() => isEditing = true),
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: _actionButton(
-                            isEditing ? 'Cancel' : 'Delete',
-                            isEditing ? Icons.close : Icons.delete,
-                            const Color(0xFFE59A9A),
-                            isEditing ? _cancelEdit : _confirmDelete,
+                            label: isEditing ? 'Cancel' : 'Delete',
+                            icon: isEditing ? Icons.close : Icons.delete,
+                            color: const Color(0xFFE59A9A),
+                            onTap: isEditing
+                                ? () => setState(() => isEditing = false)
+                                : _confirmDelete,
                           ),
                         ),
                       ],
@@ -201,12 +277,12 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
 
                     if (!isEditing)
                       _actionButton(
-                        widget.isLost
+                        label: _isLost
                             ? 'Mark as found'
                             : 'Mark as claimed',
-                        Icons.check_circle,
-                        const Color(0xFF9ED6B8),
-                        _confirmMark,
+                        icon: Icons.check_circle,
+                        color: const Color(0xFF9ED6B8),
+                        onTap: _confirmMark,
                         fullWidth: true,
                       ),
                   ],
@@ -218,15 +294,63 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
     );
   }
 
-  // ===== UI HELPERS =====
+  // ─── UI HELPERS ───────────────────────────────────────────────────
 
-  Widget _detail(
-      IconData icon,
-      String label,
-      String value,
-      bool editable,
-      Function(String)? onChanged,
-      ) {
+  // ─── SMART IMAGE (base64 OR network URL) ──────────────────────────
+  Widget _buildImage(String imageUrl) {
+    if (imageUrl.isEmpty) return _imagePlaceholder();
+
+    if (imageUrl.startsWith('data:image')) {
+      try {
+        final bytes = base64Decode(imageUrl.split(',')[1]);
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Image.memory(
+            bytes,
+            width: 220,
+            height: 220,
+            fit: BoxFit.cover,
+          ),
+        );
+      } catch (_) {
+        return _imagePlaceholder();
+      }
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Image.network(
+        imageUrl,
+        width: 220,
+        height: 220,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _imagePlaceholder(),
+      ),
+    );
+  }
+
+  Widget _imagePlaceholder() {
+    return Container(
+      width: 220,
+      height: 220,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Icon(
+        Icons.image_not_supported_outlined,
+        size: 48,
+        color: Colors.black26,
+      ),
+    );
+  }
+
+  Widget _detail({
+    required IconData icon,
+    required String label,
+    required TextEditingController controller,
+    required bool editable,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
@@ -238,17 +362,14 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
                 editable
-                    ? _editField(value, onChanged!)
-                    : Text(value, style: const TextStyle(fontSize: 12)),
+                    ? _editField(controller: controller)
+                    : Text(controller.text,
+                    style: const TextStyle(fontSize: 12)),
               ],
             ),
           ),
@@ -257,11 +378,42 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
     );
   }
 
-  Widget _editField(String initial, Function(String) onChanged) {
-    return TextFormField(
-      initialValue: initial,
-      style: const TextStyle(fontSize: 12),
-      onChanged: onChanged,
+  Widget _detailStatic({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(value, style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _editField({
+    required TextEditingController controller,
+    TextStyle? style,
+  }) {
+    return TextField(
+      controller: controller,
+      style: style ?? const TextStyle(fontSize: 12),
       decoration: const InputDecoration(
         isDense: true,
         border: UnderlineInputBorder(),
@@ -269,88 +421,77 @@ class _ItemViewScreenState extends State<ItemViewScreen> {
     );
   }
 
-  Widget _actionButton(
-      String text,
-      IconData icon,
-      Color color,
-      VoidCallback onTap, {
-        bool fullWidth = false,
-      }) {
+  Widget _actionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    bool fullWidth = false,
+  }) {
     return SizedBox(
       height: 44,
       width: fullWidth ? double.infinity : null,
       child: ElevatedButton.icon(
         onPressed: onTap,
         icon: Icon(icon, size: 18),
-        label: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        label: Text(label,
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w700)),
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.black,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+              borderRadius: BorderRadius.circular(10)),
         ),
       ),
     );
   }
 
-  // ===== DIALOGS =====
+  // ─── DIALOGS ──────────────────────────────────────────────────────
 
   void _confirmDelete() {
-    _showDialog(
-      'Delete item?',
-      'Are you sure you want to delete this item?',
-          () => Navigator.pop(context),
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete item?'),
+        content:
+        const Text('Are you sure you want to delete this item?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _deleteItem();
+              },
+              child: const Text('Yes')),
+        ],
+      ),
     );
   }
 
   void _confirmMark() {
-    _showDialog(
-      'Confirm action',
-      'Clicking yes would mark this item as '
-          '${widget.isLost ? 'found' : 'claimed'} '
-          'and would no longer show on the main feed.',
-          () {
-        setState(() {
-          isResolved = true;
-        });
-        Navigator.pop(context);
-      },
-    );
-  }
-
-  void _cancelEdit() {
-    setState(() {
-      isEditing = false;
-    });
-  }
-
-  void _showDialog(
-      String title,
-      String message,
-      VoidCallback onConfirm,
-      ) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
+        title: const Text('Confirm action'),
+        content: Text(
+          'Clicking yes would mark this item as '
+              '${_isLost ? 'found' : 'claimed'} '
+              'and it will no longer show on the main feed.',
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: onConfirm,
-            child: const Text('Yes'),
-          ),
+              onPressed: () {
+                Navigator.pop(context);
+                _markResolved();
+              },
+              child: const Text('Yes')),
         ],
       ),
     );
