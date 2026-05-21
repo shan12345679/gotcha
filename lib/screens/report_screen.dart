@@ -195,6 +195,7 @@ class _ReportScreenState extends State<ReportScreen> {
         'hasImage': imageUrl != null,
         'status': 'active',                    // used by resolved filter
         'userId': uid,                          // owner — used by MyItemsScreen
+        'isDeleted': false,                     // NEW REPORTS START NOT DELETED
         'createdAt': FieldValue.serverTimestamp(),
       });
 

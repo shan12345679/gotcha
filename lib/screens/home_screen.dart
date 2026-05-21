@@ -195,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       .collection('reports')
                       .where('type', isEqualTo: isLostSelected ? 'lost' : 'found')
                       .where('status', isEqualTo: 'active')
+                      .where('isDeleted', isEqualTo: false)
                       .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
