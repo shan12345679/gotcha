@@ -15,9 +15,6 @@ class _TrashScreenState extends State<TrashScreen> {
   String searchQuery = '';
   final TextEditingController searchController = TextEditingController();
 
-  // Track deleted items for undo
-  Map<String, Map<String, dynamic>> _deletedItems = {};
-
   @override
   void dispose() {
     searchController.dispose();
@@ -28,7 +25,6 @@ class _TrashScreenState extends State<TrashScreen> {
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterDocs(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
       ) {
-    // Sort by createdAt descending
     final sorted = List.of(docs);
     sorted.sort((a, b) {
       final aTs = a.data()['createdAt'];
@@ -75,7 +71,7 @@ class _TrashScreenState extends State<TrashScreen> {
     );
   }
 
-  // ─── RESTORE ITEM (COMPLETELY SILENT) ────────────────────────────────────
+  // ─── RESTORE ITEM ────────────────────────────────────────────────────────────
   Future<void> _restoreItem(String docId) async {
     try {
       await FirebaseFirestore.instance
@@ -85,73 +81,6 @@ class _TrashScreenState extends State<TrashScreen> {
     } catch (e) {
       debugPrint('Error restoring item: $e');
     }
-  }
-
-  // ─── PERMANENTLY DELETE ITEM (COMPLETELY SILENT) ────────────────────────────────────
-  Future<void> _deleteItemPermanently(String docId, String itemName) async {
-    try {
-      // Store deleted item data for undo
-      final docSnapshot = await FirebaseFirestore.instance
-          .collection('reports')
-          .doc(docId)
-          .get();
-
-      _deletedItems[docId] = docSnapshot.data() ?? {};
-
-      // Delete the document
-      await FirebaseFirestore.instance
-          .collection('reports')
-          .doc(docId)
-          .delete();
-    } catch (e) {
-      debugPrint('Error deleting item: $e');
-    }
-  }
-
-  // ─── UNDO DELETE (COMPLETELY SILENT) ────────────────────────────────────
-  Future<void> _undoDelete(String docId) async {
-    try {
-      if (_deletedItems.containsKey(docId)) {
-        await FirebaseFirestore.instance
-            .collection('reports')
-            .doc(docId)
-            .set(_deletedItems[docId]!);
-
-        _deletedItems.remove(docId);
-      }
-    } catch (e) {
-      debugPrint('Error undoing delete: $e');
-    }
-  }
-
-  // ─── CONFIRM DELETE DIALOG ────────────────────────────────────
-  void _showDeleteConfirmation(String docId, String itemName) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('Delete Permanently?'),
-        content: Text(
-          'Permanently delete "$itemName"? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteItemPermanently(docId, itemName);
-            },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -172,7 +101,6 @@ class _TrashScreenState extends State<TrashScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // BACK BUTTON
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Container(
@@ -189,8 +117,6 @@ class _TrashScreenState extends State<TrashScreen> {
                       ),
                     ),
                   ),
-
-                  // CENTER: TITLE
                   const Expanded(
                     child: Center(
                       child: Text(
@@ -203,9 +129,7 @@ class _TrashScreenState extends State<TrashScreen> {
                       ),
                     ),
                   ),
-
-                  // RIGHT: SPACER FOR ALIGNMENT
-                  SizedBox(width: 40),
+                  const SizedBox(width: 40),
                 ],
               ),
 
@@ -249,8 +173,7 @@ class _TrashScreenState extends State<TrashScreen> {
                       .where('isDeleted', isEqualTo: true)
                       .snapshots(),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState ==
-                        ConnectionState.waiting) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                         child: CircularProgressIndicator(strokeWidth: 2),
                       );
@@ -260,8 +183,7 @@ class _TrashScreenState extends State<TrashScreen> {
                       return const Center(
                         child: Text(
                           'Something went wrong. Please try again.',
-                          style:
-                          TextStyle(fontSize: 13, color: Colors.grey),
+                          style: TextStyle(fontSize: 13, color: Colors.grey),
                         ),
                       );
                     }
@@ -275,8 +197,7 @@ class _TrashScreenState extends State<TrashScreen> {
                           searchQuery.isEmpty
                               ? 'Your trash is empty.'
                               : 'No results found for "$searchQuery".',
-                          style: const TextStyle(
-                              fontSize: 13, color: Colors.grey),
+                          style: const TextStyle(fontSize: 13, color: Colors.grey),
                           textAlign: TextAlign.center,
                         ),
                       );
@@ -303,17 +224,14 @@ class _TrashScreenState extends State<TrashScreen> {
                               children: [
                                 // THUMBNAIL
                                 ClipRRect(
-                                  borderRadius:
-                                  BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(10),
                                   child: imageUrl.isNotEmpty
                                       ? Image.network(
                                     imageUrl,
                                     width: 58,
                                     height: 58,
                                     fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (_, __, ___) =>
-                                        _thumbPlaceholder(),
+                                    errorBuilder: (_, __, ___) => _thumbPlaceholder(),
                                   )
                                       : _thumbPlaceholder(),
                                 ),
@@ -323,8 +241,7 @@ class _TrashScreenState extends State<TrashScreen> {
                                 // INFO
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         itemName.toString().toUpperCase(),
@@ -337,18 +254,13 @@ class _TrashScreenState extends State<TrashScreen> {
                                       const SizedBox(height: 6),
                                       Row(
                                         children: [
-                                          const Icon(
-                                              Icons
-                                                  .location_on_outlined,
-                                              size: 12),
+                                          const Icon(Icons.location_on_outlined, size: 12),
                                           const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
                                               data['location'] ?? '',
-                                              style: const TextStyle(
-                                                  fontSize: 10),
-                                              overflow:
-                                              TextOverflow.ellipsis,
+                                              style: const TextStyle(fontSize: 10),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
@@ -356,15 +268,11 @@ class _TrashScreenState extends State<TrashScreen> {
                                       const SizedBox(height: 2),
                                       Row(
                                         children: [
-                                          const Icon(
-                                              Icons
-                                                  .calendar_month_outlined,
-                                              size: 12),
+                                          const Icon(Icons.calendar_month_outlined, size: 12),
                                           const SizedBox(width: 4),
                                           Text(
                                             _formatDate(data['date']),
-                                            style: const TextStyle(
-                                                fontSize: 10),
+                                            style: const TextStyle(fontSize: 10),
                                           ),
                                         ],
                                       ),
@@ -374,50 +282,22 @@ class _TrashScreenState extends State<TrashScreen> {
 
                                 const SizedBox(width: 8),
 
-                                // ACTION BUTTONS
-                                Column(
-                                  children: [
-                                    // RESTORE BUTTON
-                                    GestureDetector(
-                                      onTap: () =>
-                                          _restoreItem(docId),
-                                      child: Container(
-                                        width: 36,
-                                        height: 36,
-                                        decoration: BoxDecoration(
-                                          color: Colors.green,
-                                          borderRadius:
-                                          BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(
-                                          Icons.restore,
-                                          size: 18,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                // RESTORE BUTTON
+                                GestureDetector(
+                                  onTap: () => _restoreItem(docId),
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                    const SizedBox(height: 8),
-                                    // DELETE BUTTON
-                                    GestureDetector(
-                                      onTap: () =>
-                                          _showDeleteConfirmation(
-                                              docId, itemName),
-                                      child: Container(
-                                        width: 36,
-                                        height: 36,
-                                        decoration: BoxDecoration(
-                                          color: Colors.red,
-                                          borderRadius:
-                                          BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(
-                                          Icons.delete_forever,
-                                          size: 18,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                    child: const Icon(
+                                      Icons.restore,
+                                      size: 18,
+                                      color: Colors.white,
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ],
                             ),
