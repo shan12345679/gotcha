@@ -1,8 +1,13 @@
+// lib/screens/home_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import '../theme/app_theme.dart';
 import '../widgets/header_nav.dart';
 import '../widgets/bottom_nav.dart';
+import '../providers/filter_state.dart';
 import 'item_view_screen_home.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -13,21 +18,207 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  bool isLostSelected = true;
-  String searchQuery = '';
-  final TextEditingController searchController = TextEditingController();
-
   @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.navy,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              const HeaderNav(),
+              const SizedBox(height: 20),
+              _buildSearchBar(context),
+              const SizedBox(height: 14),
+              _buildToggleTabs(context),
+              const SizedBox(height: 18),
+              Expanded(child: _buildStreamBuilder(context)),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: const BottomNav(currentIndex: 0),
+    );
   }
 
-  // ─── FILTER + SORT IN DART (no composite index needed) ────────────
+  Widget _buildSearchBar(BuildContext context) {
+    final filterState = context.read<FilterState>();
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(40),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
+      child: TextField(
+        controller: filterState.searchController,
+        onChanged: (v) => filterState.setSearchQuery(v),
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: 'Search by name or location...',
+          hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+          prefixIcon: const Icon(Icons.search, color: AppTheme.gold),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToggleTabs(BuildContext context) {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(40),
+      ),
+      child: Consumer<FilterState>(
+        builder: (context, filterState, _) {
+          return Row(
+            children: [
+              Expanded(
+                child: _tabButton('LOST ITEMS', filterState.isLostSelected, () {
+                  filterState.setLostSelected(true);
+                }),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _tabButton('FOUND ITEMS', !filterState.isLostSelected, () {
+                  filterState.setLostSelected(false);
+                }),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _tabButton(String text, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.gold : Colors.transparent,
+          borderRadius: BorderRadius.circular(36),
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: isSelected ? AppTheme.navy : Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStreamBuilder(BuildContext context) {
+    return Consumer<FilterState>(
+      builder: (context, filterState, _) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          key: ValueKey(filterState.isLostSelected),
+          stream: FirebaseFirestore.instance
+              .collection('reports')
+              .where('type', isEqualTo: filterState.isLostSelected ? 'lost' : 'found')
+              .where('status', isEqualTo: 'active')
+              .where('isDeleted', isEqualTo: false)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(strokeWidth: 2.5, color: AppTheme.gold));
+            }
+            if (snapshot.hasError) {
+              return const Center(child: Text('Something went wrong', style: TextStyle(color: Colors.white54)));
+            }
+            final docs = _filterAndSort(snapshot.data?.docs ?? [], filterState.searchQuery);
+            if (docs.isEmpty) {
+              return Center(
+                child: Text(
+                  filterState.searchQuery.isEmpty
+                      ? 'No ${filterState.isLostSelected ? 'lost' : 'found'} items yet.'
+                      : 'No results for "${filterState.searchQuery}".',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                ),
+              );
+            }
+            return ListView.builder(
+              itemCount: docs.length,
+              itemBuilder: (context, index) {
+                final doc = docs[index];
+                final data = doc.data();
+                final imageUrl = data['imageUrl'] ?? '';
+                final docId = doc.id;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ItemViewScreenHome(report: doc),
+                        ),
+                      );
+                    },
+                    child: Card(
+                      color: AppTheme.navyLight.withOpacity(0.7),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Hero(
+                              tag: 'image_$docId',
+                              child: _buildImage(imageUrl),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    (data['itemName'] ?? 'Unknown').toString().toUpperCase(),
+                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(children: [
+                                    const Icon(Icons.location_on_outlined, size: 12, color: AppTheme.gold),
+                                    const SizedBox(width: 4),
+                                    Expanded(child: Text(data['location'] ?? '', style: const TextStyle(fontSize: 10, color: Colors.white70))),
+                                  ]),
+                                  const SizedBox(height: 2),
+                                  Row(children: [
+                                    const Icon(Icons.calendar_month_outlined, size: 12, color: AppTheme.gold),
+                                    const SizedBox(width: 4),
+                                    Text(_formatDate(data['date']), style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                                  ]),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterAndSort(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-      ) {
-    // Sort by createdAt descending in Dart — avoids Firestore composite index
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, String searchQuery) {
     final sorted = List.of(docs);
     sorted.sort((a, b) {
       final aTs = a.data()['createdAt'];
@@ -37,7 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (bTs == null) return -1;
       return (bTs as Timestamp).compareTo(aTs as Timestamp);
     });
-
     if (searchQuery.isEmpty) return sorted;
     final query = searchQuery.toLowerCase();
     return sorted.where((doc) {
@@ -47,270 +237,73 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
   }
 
-  // ─── FORMAT TIMESTAMP ─────────────────────────────────────────────
   String _formatDate(dynamic ts) {
     if (ts == null) return 'No date';
     final dt = (ts as Timestamp).toDate();
-    const months = [
-      'Jan','Feb','Mar','Apr','May','Jun',
-      'Jul','Aug','Sep','Oct','Nov','Dec',
-    ];
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return '${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}';
   }
 
-  // ─── SMART IMAGE: base64 OR network URL ───────────────────────────
-  Widget _buildImage(String imageUrl, {double size = 58, double radius = 10}) {
-    if (imageUrl.isEmpty) return _thumbPlaceholder(size: size, radius: radius);
+  // ✅ White border + shadow (pops on dark background)
+  Widget _buildImage(String imageUrl, {double size = 58, double radius = 12}) {
+    Widget imageWidget;
 
-    if (imageUrl.startsWith('data:image')) {
+    if (imageUrl.isEmpty) {
+      imageWidget = _thumbPlaceholder(size: size, radius: radius);
+    } else if (imageUrl.startsWith('data:image')) {
       try {
         final bytes = base64Decode(imageUrl.split(',')[1]);
-        return ClipRRect(
+        imageWidget = ClipRRect(
           borderRadius: BorderRadius.circular(radius),
           child: Image.memory(bytes, width: size, height: size, fit: BoxFit.cover),
         );
       } catch (_) {
-        return _thumbPlaceholder(size: size, radius: radius);
+        imageWidget = _thumbPlaceholder(size: size, radius: radius);
       }
+    } else {
+      imageWidget = ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: Image.network(
+          imageUrl,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _thumbPlaceholder(size: size, radius: radius),
+        ),
+      );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: Image.network(
-        imageUrl,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _thumbPlaceholder(size: size, radius: radius),
-      ),
-    );
-  }
-
-  Widget _thumbPlaceholder({double size = 58, double radius = 10}) {
     return Container(
-      width: size,
-      height: size,
       decoration: BoxDecoration(
-        color: Colors.grey.shade200,
         borderRadius: BorderRadius.circular(radius),
-      ),
-      child: const Icon(Icons.image_not_supported_outlined, size: 24, color: Colors.black26),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFD9E7FB),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 22),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              const HeaderNav(),
-              const SizedBox(height: 20),
-
-              // SEARCH BAR
-              Container(
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: TextField(
-                  controller: searchController,
-                  onChanged: (v) => setState(() => searchQuery = v),
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search, size: 20),
-                    hintText: 'Search here...',
-                    hintStyle: TextStyle(fontSize: 11),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.only(top: 10),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // TOGGLE TABS
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => setState(() => isLostSelected = true),
-                      child: Container(
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: isLostSelected ? const Color(0xFF2E5FA7) : Colors.white,
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Center(
-                          child: Text(
-                            'LOST ITEMS',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: isLostSelected ? Colors.white : Colors.black,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () => setState(() => isLostSelected = false),
-                      child: Container(
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: !isLostSelected ? const Color(0xFF2E5FA7) : Colors.white,
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        child: Center(
-                          child: Text(
-                            'FOUND ITEMS',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: !isLostSelected ? Colors.white : Colors.black,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 18),
-
-              // FIRESTORE FEED
-              // Key forces StreamBuilder to fully rebuild when tab switches
-              Expanded(
-                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  key: ValueKey(isLostSelected),
-                  stream: FirebaseFirestore.instance
-                      .collection('reports')
-                      .where('type', isEqualTo: isLostSelected ? 'lost' : 'found')
-                      .where('status', isEqualTo: 'active')
-                      .where('isDeleted', isEqualTo: false)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-                    }
-
-                    if (snapshot.hasError) {
-                      debugPrint('Firestore error: ${snapshot.error}');
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            'Error: ${snapshot.error}',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    }
-
-                    final docs = _filterAndSort(snapshot.data?.docs ?? []);
-
-                    if (docs.isEmpty) {
-                      return Center(
-                        child: Text(
-                          searchQuery.isEmpty
-                              ? 'No ${isLostSelected ? 'lost' : 'found'} items posted yet.'
-                              : 'No results found for "$searchQuery".',
-                          style: const TextStyle(fontSize: 13, color: Colors.grey),
-                          textAlign: TextAlign.center,
-                        ),
-                      );
-                    }
-
-                    return ListView.builder(
-                      itemCount: docs.length,
-                      itemBuilder: (context, index) {
-                        final doc = docs[index];
-                        final data = doc.data();
-                        final imageUrl = (data['imageUrl'] ?? '') as String;
-
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ItemViewScreenHome(report: doc),
-                              ),
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.85),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Row(
-                                children: [
-                                  _buildImage(imageUrl),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          (data['itemName'] ?? 'Unknown').toString().toUpperCase(),
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.location_on_outlined, size: 12),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                (data['location'] ?? '') as String,
-                                                style: const TextStyle(fontSize: 10),
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.calendar_month_outlined, size: 12),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              _formatDate(data['date']),
-                                              style: const TextStyle(fontSize: 10),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.9), // white border
+          width: 1.8,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+          BoxShadow(
+            color: Colors.white.withOpacity(0.15),
+            blurRadius: 10,
+            spreadRadius: 1,
+          ),
+        ],
       ),
-      bottomNavigationBar: const BottomNav(currentIndex: 0),
+      child: imageWidget,
     );
   }
+
+  Widget _thumbPlaceholder({double size = 58, double radius = 12}) => Container(
+    width: size, height: size,
+    decoration: BoxDecoration(
+      color: Colors.grey.shade800,
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+    ),
+    child: const Icon(Icons.image_not_supported_outlined, size: 24, color: Colors.white38),
+  );
 }

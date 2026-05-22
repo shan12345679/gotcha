@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:gotcha_app/screens/signup_screen.dart';
-import 'package:gotcha_app/screens/home_screen.dart';
+import 'package:gotcha_app/screens/home_screen.dart';   // ✅ added
+import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,11 +37,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    // Validate inputs
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please fill in all fields';
-      });
+      setState(() => _errorMessage = 'Please fill in all fields');
       return;
     }
 
@@ -50,21 +48,17 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Sign in with Firebase Auth
       final UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      // Get user UID
       final String uid = userCredential.user!.uid;
 
-      // Save/Update user data in Firestore
       await _firestore.collection('users').doc(uid).update({
         'lastLogin': FieldValue.serverTimestamp(),
         'isLoggedIn': true,
       }).catchError((_) {
-        // If document doesn't exist, create it
         return _firestore.collection('users').doc(uid).set({
           'email': _emailController.text.trim(),
           'uid': uid,
@@ -74,18 +68,12 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       });
 
-      // Navigate to HomeScreen on success
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
             transitionDuration: const Duration(milliseconds: 400),
-            pageBuilder: (_, animation, __) => const HomeScreen(),
-            transitionsBuilder: (_, animation, __, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
+            pageBuilder: (_, __, ___) => const HomeScreen(),   // ✅ fixed
+            transitionsBuilder: (_, animation, __, child) => FadeTransition(opacity: animation, child: child),
           ),
         );
       }
@@ -120,269 +108,226 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFD6E4F7),
+      backgroundColor: AppTheme.navy,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 40),
-
-                    // Logo
-                    Center(
-                      child: Image.asset(
-                        'images/gotcha_logo.png',
-                        width: 140,
-                      ),
-                    ),
-
-                    const SizedBox(height: 40),
-
-                    const Text(
-                      'Hola!',
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF1A1A2E),
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Lost something? Found something? Log in or sign up and let the community help.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF555555),
-                        height: 1.4,
-                      ),
-                    ),
-
-                    const SizedBox(height: 28),
-
-                    // Error Message
-                    if (_errorMessage != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          border: Border.all(color: Colors.red.shade300),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-
-                    // Email TextField
-                    _GotchaTextField(
-                      controller: _emailController,
-                      hint: 'Email',
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Password TextField
-                    _GotchaTextField(
-                      controller: _passwordController,
-                      hint: 'Password',
-                      obscure: true,
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Login Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _login,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A1A2E),
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: const Color(0xFF888888),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                            strokeWidth: 2,
-                          ),
-                        )
-                            : const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Sign Up Link
-                    Center(
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.of(context).push(
-                            PageRouteBuilder(
-                              transitionDuration:
-                              const Duration(milliseconds: 400),
-                              pageBuilder: (_, animation, __) =>
-                              const SignupScreen(),
-                              transitionsBuilder:
-                                  (_, animation, __, child) {
-                                final slide = Tween<Offset>(
-                                  begin: const Offset(1.0, 0.0),
-                                  end: Offset.zero,
-                                ).animate(CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutCubic,
-                                ));
-                                return SlideTransition(
-                                  position: slide,
-                                  child: child,
-                                );
-                              },
-                            ),
-                          );
-                        },
-                        child: RichText(
-                          text: const TextSpan(
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF555555),
-                            ),
-                            children: [
-                              TextSpan(text: "Don't have an account? "),
-                              TextSpan(
-                                text: 'Sign up',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF1A1A2E),
-                                ),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppTheme.navy, AppTheme.navyLight],
+            ),
+          ),
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 40),
+                      // ✨ Circular logo background
+                      Center(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppTheme.gold, width: 2.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 5),
+                              ),
+                              BoxShadow(
+                                color: AppTheme.gold.withOpacity(0.3),
+                                blurRadius: 15,
+                                spreadRadius: 2,
                               ),
                             ],
                           ),
+                          child: CircleAvatar(
+                            radius: 60,
+                            backgroundColor: Colors.white,
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Image.asset(
+                                'images/gotcha_logo.png',
+                                width: 80,
+                                height: 80,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 40),
+                      const Text(
+                        'Hola!',
+                        style: TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Lost something? Found something? Log in or sign up and let the community help.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(0.7),
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      if (_errorMessage != null)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade800.withOpacity(0.2),
+                            border: Border.all(color: Colors.red.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(color: Colors.red.shade100, fontSize: 13),
+                          ),
+                        ),
+                      _GlamorousTextField(
+                        controller: _emailController,
+                        hint: 'Email',
+                        prefixIcon: Icons.email_outlined,
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 12),
+                      _GlamorousTextField(
+                        controller: _passwordController,
+                        hint: 'Password',
+                        prefixIcon: Icons.lock_outline,
+                        obscure: true,
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _login,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.gold,
+                            foregroundColor: AppTheme.navy,
+                            disabledBackgroundColor: AppTheme.gold.withOpacity(0.5),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                            elevation: 0,
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.navy,
+                            ),
+                          )
+                              : const Text(
+                            'Login',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Center(
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              PageRouteBuilder(
+                                transitionDuration: const Duration(milliseconds: 400),
+                                pageBuilder: (_, __, ___) => const SignupScreen(),
+                                transitionsBuilder: (_, animation, __, child) =>
+                                    SlideTransition(
+                                      position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                                          .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+                                      child: child,
+                                    ),
+                              ),
+                            );
+                          },
+                          child: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(fontSize: 13, color: Colors.white70),
+                              children: const [
+                                TextSpan(text: "Don't have an account? "),
+                                TextSpan(
+                                  text: 'Sign up',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.gold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                '© 2026 Gotcha. All rights reserved.',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFF888888),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  '© 2026 Gotcha. All rights reserved.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _GotchaTextField extends StatefulWidget {
+// Reusable glamorous text field for login/signup
+class _GlamorousTextField extends StatelessWidget {
   final TextEditingController? controller;
   final String hint;
+  final IconData? prefixIcon;
   final bool obscure;
   final TextInputType? keyboardType;
 
-  const _GotchaTextField({
+  const _GlamorousTextField({
     this.controller,
     required this.hint,
+    this.prefixIcon,
     this.obscure = false,
     this.keyboardType,
   });
 
   @override
-  State<_GotchaTextField> createState() => _GotchaTextFieldState();
-}
-
-class _GotchaTextFieldState extends State<_GotchaTextField> {
-  late bool _obscureText;
-
-  @override
-  void initState() {
-    super.initState();
-    _obscureText = widget.obscure;
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.controller,
-      obscureText: _obscureText,
-      keyboardType: widget.keyboardType,
-      style: const TextStyle(
-        fontSize: 14,
-        color: Color(0xFF1A1A2E),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
       ),
-      decoration: InputDecoration(
-        hintText: widget.hint,
-        hintStyle: const TextStyle(
-          color: Color(0xFFAAAAAA),
-          fontSize: 14,
-        ),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-
-        // 👁 Eye toggle only for password
-        suffixIcon: widget.obscure
-            ? IconButton(
-          icon: Icon(
-            _obscureText
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined,
-            color: const Color(0xFF777777),
-          ),
-          onPressed: () {
-            setState(() {
-              _obscureText = !_obscureText;
-            });
-          },
-        )
-            : null,
-
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide:
-          const BorderSide(color: Color(0xFF3A6BB5), width: 1.5),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
+          prefixIcon: prefixIcon != null ? Icon(prefixIcon, color: AppTheme.gold, size: 20) : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
       ),
     );
