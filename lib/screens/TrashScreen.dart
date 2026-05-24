@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../theme/app_theme.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/header_nav.dart';
 
@@ -24,8 +21,10 @@ class _TrashScreenState extends State<TrashScreen> {
     super.dispose();
   }
 
+  // ─── FILTER + SORT IN DART ────────────────────────────────────
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterDocs(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+      ) {
     final sorted = List.of(docs);
     sorted.sort((a, b) {
       final aTs = a.data()['createdAt'];
@@ -35,6 +34,7 @@ class _TrashScreenState extends State<TrashScreen> {
       if (bTs == null) return -1;
       return (bTs as Timestamp).compareTo(aTs as Timestamp);
     });
+
     if (searchQuery.isEmpty) return sorted;
     final query = searchQuery.toLowerCase();
     return sorted.where((doc) {
@@ -44,150 +44,128 @@ class _TrashScreenState extends State<TrashScreen> {
     }).toList();
   }
 
+  // ─── FORMAT TIMESTAMP FOR CARD ────────────────────────────────────
   String _formatDate(dynamic ts) {
     if (ts == null) return 'No date';
     final dt = (ts as Timestamp).toDate();
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}';
   }
 
+  Widget _thumbPlaceholder() {
+    return Container(
+      width: 58,
+      height: 58,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(
+        Icons.image_not_supported_outlined,
+        size: 24,
+        color: Colors.black26,
+      ),
+    );
+  }
+
+  // ─── RESTORE ITEM ────────────────────────────────────────────────────────────
   Future<void> _restoreItem(String docId) async {
-    await FirebaseFirestore.instance.collection('reports').doc(docId).update({'isDeleted': false});
-    HapticFeedback.lightImpact();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Item restored'),
-          backgroundColor: AppTheme.gold,
-          duration: Duration(seconds: 1),
-        ),
-      );
+    try {
+      await FirebaseFirestore.instance
+          .collection('reports')
+          .doc(docId)
+          .update({'isDeleted': false});
+    } catch (e) {
+      debugPrint('Error restoring item: $e');
     }
-  }
-
-  Widget _buildThumbnail(String imageUrl, {double size = 58, double radius = 12}) {
-    Widget imageWidget;
-    if (imageUrl.isEmpty) {
-      imageWidget = _thumbPlaceholder(size: size, radius: radius);
-    } else if (imageUrl.startsWith('data:image')) {
-      try {
-        final bytes = base64Decode(imageUrl.split(',')[1]);
-        imageWidget = ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          child: Image.memory(bytes, width: size, height: size, fit: BoxFit.cover),
-        );
-      } catch (_) {
-        imageWidget = _thumbPlaceholder(size: size, radius: radius);
-      }
-    } else {
-      imageWidget = ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Image.network(
-          imageUrl,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _thumbPlaceholder(size: size, radius: radius),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.8),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 3)),
-          BoxShadow(color: Colors.white.withOpacity(0.15), blurRadius: 10, spreadRadius: 1),
-        ],
-      ),
-      child: imageWidget,
-    );
-  }
-
-  Widget _thumbPlaceholder({double size = 58, double radius = 12}) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade800,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
-      ),
-      child: const Icon(Icons.image_not_supported_outlined, size: 24, color: Colors.white38),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
-      ),
-      child: TextField(
-        controller: searchController,
-        onChanged: (v) => setState(() => searchQuery = v),
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintText: 'Search trash...',
-          hintStyle: TextStyle(color: Colors.white.withOpacity(0.5)),
-          prefixIcon: const Icon(Icons.search, color: AppTheme.gold),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final uid = currentUser?.uid ?? '';
+
     return Scaffold(
-      backgroundColor: AppTheme.navy,
+      backgroundColor: const Color(0xFFD9E7FB),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 22),
           child: Column(
             children: [
-              const SizedBox(height: 16),
-              const HeaderNav(),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.arrow_back, size: 18, color: AppTheme.gold),
-                      SizedBox(width: 6),
-                      Text('Back', style: TextStyle(fontSize: 12, color: AppTheme.gold)),
-                    ],
+              const SizedBox(height: 24),
+
+              // HEADER WITH BACK BUTTON
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        size: 20,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Center(
+                      child: Text(
+                        'TRASH',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 40),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // SEARCH BAR
+              Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: TextField(
+                  controller: searchController,
+                  onChanged: (value) => setState(() => searchQuery = value),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search, size: 20),
+                    hintText: 'Search trash...',
+                    hintStyle: TextStyle(fontSize: 11),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.only(top: 10),
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'TRASH',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildSearchBar(),
-              const SizedBox(height: 20),
+
+              const SizedBox(height: 18),
+
+              // TRASH ITEMS LIST
               Expanded(
                 child: uid.isEmpty
-                    ? const Center(child: Text('Please log in', style: TextStyle(color: Colors.white54)))
+                    ? const Center(
+                  child: Text(
+                    'Please log in to view trash.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                )
                     : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: FirebaseFirestore.instance
                       .collection('reports')
@@ -196,100 +174,132 @@ class _TrashScreenState extends State<TrashScreen> {
                       .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator(strokeWidth: 2.5, color: AppTheme.gold));
+                      return const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      );
                     }
+
                     if (snapshot.hasError) {
-                      return const Center(child: Text('Error', style: TextStyle(color: Colors.white54)));
-                    }
-                    final docs = _filterDocs(snapshot.data?.docs ?? []);
-                    if (docs.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.delete_sweep_outlined, size: 64, color: Colors.white.withOpacity(0.3)),
-                            const SizedBox(height: 12),
-                            Text(
-                              searchQuery.isEmpty ? 'Trash is empty' : 'No results for "$searchQuery"',
-                              style: const TextStyle(color: Colors.white54, fontSize: 14),
-                            ),
-                          ],
+                      return const Center(
+                        child: Text(
+                          'Something went wrong. Please try again.',
+                          style: TextStyle(fontSize: 13, color: Colors.grey),
                         ),
                       );
                     }
+
+                    final allDocs = snapshot.data?.docs ?? [];
+                    final docs = _filterDocs(allDocs);
+
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Text(
+                          searchQuery.isEmpty
+                              ? 'Your trash is empty.'
+                              : 'No results found for "$searchQuery".',
+                          style: const TextStyle(fontSize: 13, color: Colors.grey),
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+
                     return ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 16),
                       itemCount: docs.length,
                       itemBuilder: (context, index) {
                         final doc = docs[index];
                         final data = doc.data();
                         final imageUrl = data['imageUrl'] ?? '';
+                        final docId = doc.id;
+                        final itemName = data['itemName'] ?? 'Unknown';
+
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: Card(
-                            color: AppTheme.navyLight.withOpacity(0.7),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Row(
-                                children: [
-                                  _buildThumbnail(imageUrl),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          (data['itemName'] ?? 'Unknown').toString().toUpperCase(),
-                                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white),
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              children: [
+                                // THUMBNAIL
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: imageUrl.isNotEmpty
+                                      ? Image.network(
+                                    imageUrl,
+                                    width: 58,
+                                    height: 58,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => _thumbPlaceholder(),
+                                  )
+                                      : _thumbPlaceholder(),
+                                ),
+
+                                const SizedBox(width: 12),
+
+                                // INFO
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        itemName.toString().toUpperCase(),
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
                                         ),
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.location_on_outlined, size: 12, color: AppTheme.gold),
-                                            const SizedBox(width: 4),
-                                            Expanded(
-                                              child: Text(
-                                                data['location'] ?? '',
-                                                style: const TextStyle(fontSize: 11, color: Colors.white70),
-                                              ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.location_on_outlined, size: 12),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              data['location'] ?? '',
+                                              style: const TextStyle(fontSize: 10),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            const Icon(Icons.calendar_month_outlined, size: 12, color: AppTheme.gold),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              _formatDate(data['date']),
-                                              style: const TextStyle(fontSize: 11, color: Colors.white70),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.calendar_month_outlined, size: 12),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _formatDate(data['date']),
+                                            style: const TextStyle(fontSize: 10),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(width: 8),
+
+                                // RESTORE BUTTON
+                                GestureDetector(
+                                  onTap: () => _restoreItem(docId),
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.restore,
+                                      size: 18,
+                                      color: Colors.white,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  OutlinedButton(
-                                    onPressed: () => _restoreItem(doc.id),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: AppTheme.gold,
-                                      side: BorderSide(color: AppTheme.gold.withOpacity(0.6), width: 1.5),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.restore, size: 18),
-                                        SizedBox(width: 6),
-                                        Text('Restore', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         );
